@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agricultural RAG Assistant</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f9; color: #333; max-width: 800px; margin: 40px auto; padding: 20px; }
+        h1 { color: #2c6b2f; }
+        textarea { width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:hover { background-color: #45a049; }
+        #results { margin-top: 20px; background-color: #fff; padding: 20px; border-radius: 5px; border: 1px solid #ddd; }
+        #loader { display: none; text-align: center; font-style: italic; color: #555; }
+        .answer { white-space: pre-wrap; /* Preserves line breaks in the answer */ }
+        .sources { margin-top: 20px; }
+        .source { background-color: #e9f5e9; border-left: 3px solid #4CAF50; padding: 10px; margin-bottom: 10px; font-size: 14px; }
+        .source strong { color: #2c6b2f; }
+    </style>
+</head>
+<body>
+    <h1>Ask the Agricultural Expert</h1>
+    <form id="rag-form">
+        <textarea id="question" rows="4" placeholder="e.g., How do I manage powdery mildew on grapevines?"></textarea>
+        <button type="submit">Ask Question</button>
+    </form>
+
+    <div id="loader">Thinking...</div>
+    <div id="results"></div>
+
+    <script>
+        const form = document.getElementById('rag-form');
+        const questionInput = document.getElementById('question');
+        const resultsDiv = document.getElementById('results');
+        const loader = document.getElementById('loader');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const question = questionInput.value.trim();
+            if (!question) return;
+
+            loader.style.display = 'block';
+            resultsDiv.innerHTML = '';
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: question })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayResults(data);
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color: red;">Error: Could not get an answer. Is the backend server running?</p>`;
+                console.error('Fetch error:', error);
+            } finally {
+                loader.style.display = 'none';
+            }
+        });
+
+        function displayResults(data) {
+            let sourcesHTML = '<div class="sources"><h3>Sources:</h3>';
+            data.source_documents.forEach(doc => {
+                sourcesHTML += `
+                    <div class="source">
+                        <strong>From Dataset: ${doc.metadata.dataset || 'N/A'}</strong>
+                        <p>${doc.content.substring(0, 300)}...</p> 
+                    </div>`;
+            });
+            sourcesHTML += '</div>';
+
+            resultsDiv.innerHTML = `
+                <h2>Answer:</h2>
+                <p class="answer">${data.answer}</p>
+                ${sourcesHTML}
+            `;
+        }
+    </script>
+</body>
+</html>

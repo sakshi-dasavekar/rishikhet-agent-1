@@ -1,0 +1,5 @@
+filtered_datasets/
+rag_storage_filtered/
+modular_agricultural_rag_filtered_skip_large.py
+check_filtering_status.py
+.env
