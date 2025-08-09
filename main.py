@@ -290,7 +290,7 @@
 
 #!/usr/bin/env python3
 """
-FastAPI application for the Agricultural RAG System using Pinecone
+FastAPI application for the Agricultural RAG System using Pinecone and HF Inference API
 """
 
 import os
@@ -304,14 +304,14 @@ import uvicorn
 # --- NEW IMPORTS ---
 from fastapi.responses import HTMLResponse
 from langchain_pinecone import PineconeVectorStore
-# --- END NEW IMPORTS ---
+# --- THIS IMPORT HAS CHANGED ---
+from langchain_huggingface import HuggingFaceInferenceAPIEmbeddings
 
 # LangChain components
 from langchain_groq import ChatGroq
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import create_retrieval_chain
-from langchain_huggingface import HuggingFaceEmbeddings
 
 # --- Pydantic Models (No change) ---
 class Query(BaseModel):
@@ -340,8 +340,6 @@ app.add_middleware(
 # --- Global variable to hold the RAG chain ---
 retrieval_chain = None
 
-# --- Custom Retriever class has been removed ---
-
 # --- UPDATED Server Startup Logic ---
 @app.on_event("startup")
 async def startup_event():
@@ -355,22 +353,30 @@ async def startup_event():
     
     groq_api_key = os.getenv("GROQ_API_KEY")
     pinecone_api_key = os.getenv("PINECONE_API_KEY")
+    hf_token = os.getenv("HUGGINGFACE_API_TOKEN") # New required secret
     
-    if not groq_api_key or not pinecone_api_key:
-        raise ValueError("❌ Groq or Pinecone API key not found in environment variables.")
+    if not all([groq_api_key, pinecone_api_key, hf_token]):
+        raise ValueError("❌ One or more API keys are missing from environment variables.")
 
-    print("   ➡️ Initializing embedding model...")
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    # --- 1. Initialize Embedding Model via API ---
+    # This change solves the memory issue by not loading the model locally.
+    print("   ➡️ Initializing embedding model via Hugging Face API...")
+    embeddings = HuggingFaceInferenceAPIEmbeddings(
+        api_key=hf_token, model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
     
+    # --- 2. Connect to Pinecone Vector Store (No change) ---
     print("   ➡️ Connecting to Pinecone vector store...")
     index_name = "rishikhet-agent"
     vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings)
     
     retriever = vectorstore.as_retriever()
 
+    # --- 3. Initialize LLM (No change) ---
     print("   ➡️ Initializing LLM...")
     llm = ChatGroq(temperature=0, model_name="llama3-70b-8192", api_key=groq_api_key)
     
+    # --- 4. Create Prompt and Chain (No change) ---
     prompt = ChatPromptTemplate.from_template("""
     You are an expert agricultural advisor with deep knowledge of crop production, farming practices, disease management, and agricultural technologies. 
     Answer the following question based only on the provided agricultural knowledge base:
@@ -395,13 +401,9 @@ async def startup_event():
     
     print(f"\n✅ RAG API is ready and running!")
 
-# --- API Endpoints ---
-# --- UPDATED Root Endpoint to serve index.html ---
+# --- API Endpoints (No change) ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    """
-    Serves the index.html file as the frontend for testing.
-    """
     try:
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
@@ -410,16 +412,10 @@ async def read_root():
 
 @app.post("/ask", response_model=Answer)
 async def ask_question(query: Query):
-    """
-    Accepts a question and returns an answer from the RAG system.
-    """
     if not retrieval_chain:
         return {"error": "RAG chain not initialized. Check server logs."}
-        
     print(f"🤔 Received question: {query.text}")
-    
     response = await retrieval_chain.ainvoke({"input": query.text})
-    
     source_documents = []
     if "context" in response and response["context"]:
         for doc in response["context"]:
@@ -427,9 +423,8 @@ async def ask_question(query: Query):
                 "content": doc.page_content,
                 "metadata": doc.metadata
             })
-            
     return {"answer": response["answer"], "source_documents": source_documents}
 
-# --- To run the server directly ---
+# --- To run the server directly (No change) ---
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
